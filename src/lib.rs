@@ -9,17 +9,19 @@ use core::task::{Context, Poll};
 /// That way the executor is guaranteed to continue polling us. This doesn't actually matter if
 /// we're using the `block_on` executor from this mod, but it would matter if we used a normal
 /// executor. I got this trick from user HadrienG in [this Rust forum post](https://users.rust-lang.org/t/polling-in-new-era-futures/30531/2).
-pub fn until_true<F: Fn() -> bool>(f: F) -> impl Future<Output = ()> {
+pub fn until_true<F: FnMut() -> bool + Unpin>(f: F) -> impl Future<Output = ()> {
     UntilTrue(f)
 }
 
-struct UntilTrue<F: Fn() -> bool>(F);
+struct UntilTrue<F: FnMut() -> bool>(F);
 
-impl<F: Fn() -> bool> Future for UntilTrue<F> {
+// TODO why do we need to implement Unpin here?
+impl<F: FnMut() -> bool + Unpin> Future for UntilTrue<F> {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.as_mut().0() {
+        // TODO I don't understand why dereferencing and then taking a mutable reference works
+        if (&mut *self).0() {
             Poll::Ready(())
         } else {
             cx.waker().wake_by_ref();
@@ -36,5 +38,11 @@ mod tests {
     #[test]
     fn until_true_once() {
         block_on(until_true(|| true))
+    }
+
+    #[test]
+    fn until_true_twice() {
+        let mut first_time = true;
+        block_on(until_true(|| if first_time { first_time = false; false } else { true }))
     }
 }
