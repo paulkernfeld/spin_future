@@ -1,3 +1,4 @@
+//! This crate needs rust 1.46 or newer to get around an interesting issue: https://github.com/rust-lang/rust/issues/65489
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -20,8 +21,9 @@ impl<F: FnMut() -> bool + Unpin> Future for UntilTrue<F> {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // TODO I don't understand why dereferencing and then taking a mutable reference works
-        if (&mut *self).0() {
+        // This is a workaround for earlier versions of Rust
+        // if (&mut *self).0() {
+        if self.0() {
             Poll::Ready(())
         } else {
             cx.waker().wake_by_ref();
@@ -43,6 +45,13 @@ mod tests {
     #[test]
     fn until_true_twice() {
         let mut first_time = true;
-        block_on(until_true(|| if first_time { first_time = false; false } else { true }))
+        block_on(until_true(|| {
+            if first_time {
+                first_time = false;
+                false
+            } else {
+                true
+            }
+        }))
     }
 }
